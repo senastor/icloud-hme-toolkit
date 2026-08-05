@@ -1,4 +1,4 @@
-# iCloud HME Toolkit — 平台管理 Alamat Hide My Email
+# iCloud HME Toolkit — Manajemen Alamat Hide My Email
 
 Toolkit untuk membuat dan mengelola alamat **Hide My Email (HME)** `@icloud.com` secara massal, berbasis protokol iCloud Hide My Email Apple. Mendukung multi-akun, penjadwalan otomatis, dan Web UI.
 
