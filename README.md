@@ -1,130 +1,130 @@
-# iCloud HME — 多账号聚合管理平台
+# iCloud HME Toolkit — 平台管理 Alamat Hide My Email
 
-基于 iCloud Hide My Email 协议，批量创建 `@icloud.com` 隐私邮箱的商用聚合平台。
+Toolkit untuk membuat dan mengelola alamat **Hide My Email (HME)** `@icloud.com` secara massal, berbasis protokol iCloud Hide My Email Apple. Mendukung multi-akun, penjadwalan otomatis, dan Web UI.
 
-- 👥 **多账号管理** — 同时管理多组 iCloud 账号，每个独立存储、独立会话
-- 🔗 **账号-别名映射** — 自动提取真实 Apple ID，每个隐私邮箱标注归属账号
-- ⏱ **定时调度** — 整点自动触发，多账号轮询创建，触达上限自动切下一个
-- 🌐 **Web UI** — 暖色面板，仪表盘 + 账号列表 + 别名管理 + 跨账号批量创建
+- 👥 **Multi-akun** — kelola banyak akun iCloud sekaligus, setiap akun tersimpan & ber-sesi terpisah
+- 🔗 **Pemetaan akun-ke-alias** — ekstraksi Apple ID otomatis, setiap alamat dicatat ke akun pemiliknya
+- ⏱ **Penjadwalan** — trigger otomatis per jam, rotasi antar akun, otomatis pindah akun saat kena batas
+- 🌐 **Web UI** — panel hangat: dashboard + daftar akun + manajemen alias + pembuatan massal lintas akun
 
-## 前提条件
+## Prasyarat
 
-- **iCloud+ 订阅**（Hide My Email 需要 iCloud+）
+- Langganan **iCloud+** (Hide My Email butuh iCloud+)
 - Python 3.10+
 - Windows / macOS / Linux
 
-## 快速开始
+## Memulai
 
 ```bash
-# 1. 安装依赖
+# 1. Install dependensi
 pip install -r requirements.txt
 
-# 2. 启动 Web UI
+# 2. Jalankan Web UI
 python web_ui.py
 
-# 3. 打开 http://127.0.0.1:5050
-#    点击左下角「导入 Cookie」添加第一个账号
-#    支持粘贴 Cookie Editor 的 Header String 或 JSON
+# 3. Buka http://127.0.0.1:5050
+#    Klik "Import Cookie" di pojok kiri bawah untuk menambahkan akun pertama
+#    Mendukung Header String atau JSON dari Cookie Editor
 ```
 
-## 使用方式
+## Cara Pakai
 
-### Web UI（推荐）
+### Web UI (disarankan)
 
 ```bash
-python web_ui.py                    # 启动 Web 界面
-python web_ui.py --port 8080        # 指定端口
-python web_ui.py --scheduler        # 启动时自动开启调度器
+python web_ui.py                    # jalankan antarmuka web
+python web_ui.py --port 8080        # tentukan port
+python web_ui.py --scheduler        # aktifkan scheduler otomatis saat start
 ```
 
-界面功能：
+Fitur antarmuka:
 
-| 模块 | 功能 |
+| Modul | Fungsi |
 |------|------|
-| **账号管理** | 添加/切换/删除账号，每个账号独立 Cookie + 会话 |
-| **仪表盘** | 账号总数、总别名数、今日创建数，每账号一张状态卡片 |
-| **别名列表** | 实时拉取所有别名，标注所属账号 + 真实邮箱 |
-| **批量创建** | 勾选目标账号 → 输入数量 → 跨账号轮询创建 |
-| **调度器** | 一键启停，每整点遍历所有活跃账号创建到上限 |
+| **Manajemen Akun** | Tambah/ganti/hapus akun, tiap akun punya Cookie + sesi terpisah |
+| **Dashboard** | Total akun, total alias, jumlah dibuat hari ini, kartu status per akun |
+| **Daftar Alias** | Menarik semua alias secara real-time, ditandai akun pemilik + email asli |
+| **Buat Massal** | Centang akun target → isi jumlah → pembuatan rotasi lintas akun |
+| **Scheduler** | Start/stop sekali klik, setiap jam memproses semua akun aktif sampai batas |
 
-### 命令行调度器
+### Scheduler Baris Perintah
 
 ```bash
-# 多账号定时调度（需要先通过 Web UI 添加账号）
+# Penjadwalan multi-akun (tambahkan akun dulu melalui Web UI)
 python scheduler.py
 
-# 指定账号间间隔
+# Tentukan interval antar akun
 python scheduler.py --interval 5
 
-# 后台守护进程
+# Jalankan sebagai daemon di background
 python scheduler.py -d
 ```
 
-### CLI 手动操作
+### Operasi Manual via CLI
 
 ```bash
-# 列出所有别名
+# Daftarkan semua alias
 python icloud_hme.py list --cookies cookies.json
 
-# 创建别名
+# Buat alias
 python icloud_hme.py create -n 5 --cookies cookies.json
 
-# 删除别名
+# Hapus alias
 python icloud_hme.py delete --email xxx@icloud.com --cookies cookies.json
 ```
 
-## Cookie 获取
+## Mendapatkan Cookie
 
-| 方式 | 说明 |
+| Cara | Keterangan |
 |------|------|
-| Web UI 导入 | 点击左下角按钮，粘贴 Cookie Editor 的 Header String |
-| Chrome 自动提取 | Windows 下 `python icloud_hme.py export-cookies` |
-| 命令行 `--cookies` | 指定 JSON 文件路径 |
+| Import Web UI | Klik tombol pojok kiri bawah, tempel Header String dari Cookie Editor |
+| Ekstrak Chrome | Windows: `python icloud_hme.py export-cookies` |
+| CLI `--cookies` | Tentukan path file JSON |
 
-支持两种输入格式：
-- **Header String**：`name1=value1; name2=value2; ...`
-- **JSON**：`{"name1":"value1", "name2":"value2"}`
+Mendukung dua format input:
+- **Header String**: `name1=value1; name2=value2; ...`
+- **JSON**: `{"name1":"value1", "name2":"value2"}`
 
-导入后自动持久化到 `accounts.json`，重启无需重新粘贴。
+Setelah import otomatis tersimpan ke `accounts.json`, restart tidak perlu tempel ulang.
 
-## 调度逻辑
-
-```
-每整点触发一轮
-  → 遍历所有活跃账号
-  → 每个账号创建到 iCloud 返回上限
-  → 账号间间隔 3 秒（可配）
-  → 全部完成后等待下一个整点
-```
-
-## 文件结构
+## Logika Scheduler
 
 ```
-├── icloud_hme.py        # 核心库：Cookie 提取 / HME API / 账号身份提取
-├── account_manager.py   # 多账号管理器：CRUD / 批量创建 / 别名索引
-├── web_ui.py            # Flask Web 面板 + 内置调度器
-├── scheduler.py         # 独立命令行调度器
-└── requirements.txt     # pip 依赖
+Trigger per jam
+  → proses semua akun aktif
+  → tiap akun buat sampai batas yang dikembalikan iCloud
+  → interval antar akun 3 detik (dapat diatur)
+  → setelah selesai, tunggu jam berikutnya
 ```
 
-运行时生成：
+## Struktur File
 
 ```
-accounts.json          # 所有账号及 Cookie（自动持久化）
-scheduler_state.json   # 调度器历史状态
-logs/                  # 运行日志
-results/               # 创建的邮箱列表
+├── icloud_hme.py        # Library inti: ekstrak Cookie / API HME / identitas akun
+├── account_manager.py   # Manajer multi-akun: CRUD / buat massal / indeks alias
+├── web_ui.py            # Panel Web Flask + scheduler bawaan
+├── scheduler.py         # Scheduler baris perintah mandiri
+└── requirements.txt     # dependensi pip
 ```
 
-## 依赖
+Dihasilkan saat runtime:
+
+```
+accounts.json          # semua akun & Cookie (persistensi otomatis)
+scheduler_state.json   # status histori scheduler
+logs/                  # log berjalan
+results/               # daftar email yang dibuat
+```
+
+## Dependensi
 
 ```
 requests>=2.25          # HTTP
-pycryptodome>=3.15     # Chrome cookie 解密 (Windows)
-pywin32>=305           # Windows DPAPI (仅 Windows)
+pycryptodome>=3.15     # dekripsi cookie Chrome (Windows)
+pywin32>=305           # Windows DPAPI (khusus Windows)
 flask>=3.0             # Web UI
 ```
 
-## License
+## Lisensi
 
 MIT
