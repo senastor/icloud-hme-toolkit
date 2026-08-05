@@ -41,7 +41,7 @@ class AccountManager:
 
     def __init__(self):
         self.accounts: Dict[str, Dict] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._cache = get_cache()
         self._load()
 
@@ -62,13 +62,22 @@ class AccountManager:
 
     def _save(self):
         with self._lock:
-            ACCOUNTS_FILE.write_text(
-                json.dumps({
-                    "accounts": self.accounts,
-                    "updated_at": datetime.now().isoformat(),
-                }, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            payload = json.dumps({
+                "accounts": self.accounts,
+                "updated_at": datetime.now().isoformat(),
+            }, indent=2, ensure_ascii=False)
+            # atomic write: tulis ke temp dulu, lalu rename — cegah file kosong saat proses di-kill
+            tmp = ACCOUNTS_FILE.with_suffix(".json.tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            # backup terakhir sebelum timpa
+            if ACCOUNTS_FILE.exists() and ACCOUNTS_FILE.stat().st_size > 100:
+                bak = ACCOUNTS_FILE.with_suffix(".json.bak")
+                try:
+                    import shutil
+                    shutil.copy2(ACCOUNTS_FILE, bak)
+                except Exception:
+                    pass
+            tmp.replace(ACCOUNTS_FILE)
 
     def _migrate_old_cookies(self):
         try:
@@ -192,6 +201,43 @@ class AccountManager:
             self._save()
             return True
         return False
+
+    def refresh_cookies_from_pool(self) -> Dict[str, bool]:
+        """从 icloud-hme-pool 的 session.json 同步最新 cookie 到 accounts.json。
+
+        Pool CLI (hme.py) 用密码登录后会把 session (含 cookies + trust_token)
+        存到 ~/.icloud-hme/<safe_id>/session.json。这里读取那些 cookies，
+        按 Apple ID 匹配 accounts.json 里的账号，更新其 cookie。
+
+        返回: {acc_id: True/False 是否更新}
+        """
+        pool_dir = Path.home() / ".icloud-hme"
+        if not pool_dir.exists():
+            return {}
+        updated: Dict[str, bool] = {}
+        for acc_id, account in list(self.accounts.items()):
+            real_email = account.get("real_email", "")
+            if not real_email:
+                continue
+            safe = real_email.replace("@", "_at_").replace(".", "_")
+            sp = pool_dir / safe / "session.json"
+            if not sp.exists():
+                continue
+            try:
+                data = json.loads(sp.read_text(encoding="utf-8"))
+                cookies = data.get("cookies", {})
+                if not isinstance(cookies, dict) or not cookies:
+                    continue
+                old = account.get("cookies", {})
+                if old != cookies:
+                    account["cookies"] = cookies
+                    account["last_cookie_refresh"] = datetime.now().isoformat()
+                    updated[acc_id] = True
+            except Exception:
+                continue
+        if updated:
+            self._save()
+        return updated
 
     def get_account(self, acc_id: str) -> Optional[Dict]:
         return self.accounts.get(acc_id)
@@ -447,6 +493,7 @@ class AccountManager:
         )
 
         results: List[Dict] = []
+        client_recovered = False
         for i in range(count):
             try:
                 alias_label = label or (
@@ -475,13 +522,53 @@ class AccountManager:
                     })
             except Exception as e:
                 err_str = str(e)
+                lower = err_str.lower()
+                # 401/421 = 会话失效 → 尝试从 pool session 同步 cookie 后重建 client 重试
+                if any(kw in err_str for kw in ("421", "401")) and not client_recovered:
+                    try:
+                        self.refresh_cookies_from_pool()
+                        account = self.accounts.get(acc_id)
+                        if account:
+                            client = ICloudHME(
+                                account["cookies"],
+                                host=account.get("host", "icloud.com"),
+                                verbose=False,
+                            )
+                            client_recovered = True
+                            result = client.create_alias(
+                                label=label or (
+                                    f"{account.get('name', acc_id)} "
+                                    f"{datetime.now().strftime('%m%d%H%M')}-{i + 1}"
+                                ),
+                                max_retries=3,
+                            )
+                            email = result.get("email", "")
+                            if email:
+                                results.append({
+                                    "email": email,
+                                    "account_id": acc_id,
+                                    "ok": True,
+                                })
+                                RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+                                with open(str(LATEST_EMAILS), "a", encoding="utf-8") as f:
+                                    f.write(f"{email}\t{acc_id}\n")
+                                account["alias_total"] = account.get("alias_total", 0) + 1
+                                account["alias_active"] = account.get("alias_active", 0) + 1
+                                continue
+                    except Exception as recover_err:
+                        results.append({
+                            "email": None,
+                            "account_id": acc_id,
+                            "ok": False,
+                            "error": f"auto-recover failed: {str(recover_err)[:120]}",
+                        })
+                        continue
                 results.append({
                     "email": None,
                     "account_id": acc_id,
                     "ok": False,
                     "error": err_str[:200],
                 })
-                lower = err_str.lower()
                 if any(kw in lower for kw in (
                     "limit", "exceeded", "maximum", "quota", "429",
                     "too many", "rate", "throttle",
