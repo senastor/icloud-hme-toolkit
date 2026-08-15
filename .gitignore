@@ -20,6 +20,16 @@ cookies.json
 cookies.json.bak
 icloud_cookies.json
 accounts.json
+accounts.json.bak
+accounts.db
 scheduler_state.json
 latest_emails.txt
 mail_cache.json
+apple_creds.env
+*.env
+apple_session.json
+/tmp/apple_session.json
+# Backups & temp
+*.bak
+*.backup
+*.tmp

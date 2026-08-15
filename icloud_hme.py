@@ -230,6 +230,21 @@ class ICloudHME:
         self._setup_url: Optional[str] = None
         self._service_url: Optional[str] = None
         self._account_info: Optional[Dict] = None
+        # ---- Opsi B: session headers (X-Apple-ID-Session-Id / scnt / dll) ----
+        # iCloud rotate token server-side; harus di-echo balik biar session
+        # bertahan lama tanpa re-import cookie manual tiap jam.
+        self.session_headers: Dict[str, str] = {}
+        self._last_validate: float = 0.0
+
+    def get_fresh_cookies(self) -> Dict[str, str]:
+        """Kembalikan cookies TERBARU (termasuk yang di-update via Set-Cookie
+        selama session hidup). Panggil setelah validate/create buat di-persist."""
+        merged = dict(self.cookies)
+        for ck in self.session.cookies:
+            if ck.domain and ("icloud" in ck.domain or "apple" in ck.domain) and ck.value is not None:
+                merged[ck.name] = ck.value
+        self.cookies = merged
+        return merged
 
     # ---- 内部 ----
 
@@ -271,9 +286,12 @@ class ICloudHME:
             "Origin": self.origin,
             "Referer": self.origin + "/",
             "Accept": "application/json, text/plain, */*",
-            "Content-Type": "text/plain;charset=UTF-8" if "maildomainws" in urlparse(url).hostname
+            "Content-Type": "text/plain;charset=UTF-8" if "maildomainws" in (urlparse(url).hostname or "")
             else "application/json",
         }
+        # Opsi B: echo session headers (X-Apple-ID-Session-Id / scnt / dsid) —
+        # iCloud butuh ini biar session bertahan tanpa re-import cookie.
+        headers.update(self.session_headers)
 
         body = json.dumps(json_data, ensure_ascii=False) if json_data is not None else None
         last_err = None
@@ -281,9 +299,14 @@ class ICloudHME:
         for attempt in range(1, max_attempts + 1):
             try:
                 resp = self.session.request(method, full_url, headers=headers, data=body, timeout=timeout)
+                # Opsi B: capture fresh cookies dari Set-Cookie (token di-rotate)
+                self.get_fresh_cookies()
                 if not resp.ok:
                     last_err = RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
                     if resp.status_code in (401, 403):
+                        # Opsi B: coba refresh session headers via validate, lalu retry 1x
+                        if self._try_refresh_session():
+                            continue
                         raise last_err
                     if attempt < max_attempts:
                         time.sleep(RETRY_DELAYS[min(attempt - 1, len(RETRY_DELAYS) - 1)])
@@ -305,12 +328,48 @@ class ICloudHME:
                 raise last_err
         raise last_err or RuntimeError("未知错误")
 
+    def _try_refresh_session(self) -> bool:
+        """Opsi B: re-validate untuk dapet X-Apple-ID-Session-Id / scnt fresh.
+        Return True kalau berhasil refresh (request bisa di-retry)."""
+        try:
+            self.validate_session()
+            return True
+        except Exception:
+            return False
+
+    def _request_raw(self, method: str, url: str, json_data: Any = None,
+                     timeout: int = REQUEST_TIMEOUT) -> "requests.Response":
+        """Request tanpa auto-json-parse — return Response (butuh headers utk session)."""
+        full_url = self._build_url(url)
+        headers = {
+            "Origin": self.origin,
+            "Referer": self.origin + "/",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+        }
+        headers.update(self.session_headers)
+        body = json.dumps(json_data, ensure_ascii=False) if json_data is not None else None
+        resp = self.session.request(method, full_url, headers=headers, data=body, timeout=timeout)
+        self.get_fresh_cookies()
+        return resp
+
     # ---- 会话 ----
 
     def validate_session(self) -> Dict:
         """校验 iCloud 会话，获取 Hide My Email 服务端点及账号身份"""
         self._log("校验 iCloud 会话...")
-        data = self._request("POST", f"{self.setup_url}/validate", timeout=20)
+        resp = self._request_raw("POST", f"{self.setup_url}/validate", timeout=20)
+        # Opsi B: simpan session headers dari response — ini kunci biar session
+        # bertahan lama. iCloud kirim ulang token baru tiap response.
+        for h in ("X-Apple-ID-Session-Id", "X-Apple-ID-Account-Info",
+                  "X-Apple-I-Request-Id", "scnt", "X-Apple-ID-Scope"):
+            v = resp.headers.get(h)
+            if v:
+                self.session_headers[h] = v
+        self._last_validate = time.time()
+        if not resp.ok:
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+        data = resp.json() if resp.text else {}
         premium = data.get("webservices", {}).get("premiummailsettings", {})
         if not premium.get("url"):
             raise RuntimeError(

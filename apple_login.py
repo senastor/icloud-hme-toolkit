@@ -124,7 +124,13 @@ def main():
                     print("  [2FA inputs]:", json.dumps(dbg))
                 except Exception as e:
                     print("  [2FA dump fail]:", e)
-                code = input(">>> Enter 2FA code: ").strip()
+                # Try file first, fallback to input
+                try:
+                    with open('/tmp/2fa_code.txt', 'r') as f:
+                        code = f.read().strip()
+                        print(f">>> 2FA code from file: {code}")
+                except:
+                    code = input(">>> Enter 2FA code: ").strip()
                 gave_2fa = True
                 filled = False
                 # Apple 2FA auto-advances: focus first box, type full code via keyboard
